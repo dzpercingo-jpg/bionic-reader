@@ -63,6 +63,17 @@ export type AppMode = 'welcome' | 'guided' | 'expert'
  */
 export type ReadingProfile = 'apaise' | 'equilibre' | 'concentre' | 'sprint' | null
 
+/**
+ * Export targets.
+ *
+ *   inplace : preserve the original file's format (DOCX→DOCX, PDF→PDF,
+ *             PPTX→PPTX, XLSX→XLSX) with images / tables / formulas
+ *             intact. Only the prefix-letter spans get bolded.
+ *   html/docx/txt : rebuild from the parsed model (the original file is
+ *                   never written but most non-text content is lost).
+ */
+export type ExportFormat = 'inplace' | 'html' | 'docx' | 'txt'
+
 export interface Settings {
   // Bionic core
   bionicEnabled: boolean

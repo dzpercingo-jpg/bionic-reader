@@ -29,11 +29,13 @@ const PANELS: { id: Panel; label: string; icon: React.FC<{ className?: string }>
   { id: 'export', label: 'Export', icon: Sparkles },
 ]
 
+import type { ExportFormat } from '../types'
+
 export default function Toolbar({
   onExport,
   onReset,
 }: {
-  onExport: (fmt: 'html' | 'docx' | 'txt') => void
+  onExport: (fmt: ExportFormat) => void
   onReset: () => void
 }) {
   const [active, setActive] = useState<Panel | null>('bionic')
@@ -619,7 +621,16 @@ function TtsPanel({ settings, setSettings }: PanelProps) {
   )
 }
 
-function ExportPanel({ onExport }: { onExport: (fmt: 'html' | 'docx' | 'txt') => void }) {
+function ExportPanel({ onExport }: { onExport: (fmt: ExportFormat) => void }) {
+  const { sourceFile } = useApp()
+  const ext = sourceFile?.name.split('.').pop()?.toLowerCase() ?? ''
+  const canInplace = ['pdf', 'docx', 'pptx', 'xlsx'].includes(ext)
+  const inplaceLabel: Record<string, string> = {
+    pdf: 'PDF (préserve images & mise en page)',
+    docx: 'Word (préserve images, tableaux, styles)',
+    pptx: 'PowerPoint (préserve diapos & images)',
+    xlsx: 'Excel (préserve formules & graphes)',
+  }
   return (
     <Section title="Export">
       <p className="text-xs text-stone-500">
@@ -627,6 +638,15 @@ function ExportPanel({ onExport }: { onExport: (fmt: 'html' | 'docx' | 'txt') =>
         modifié.
       </p>
       <div className="grid grid-cols-1 gap-2">
+        {canInplace && (
+          <button
+            onClick={() => onExport('inplace')}
+            className="px-3 py-2 text-sm rounded-md bg-emerald-600 text-white hover:bg-emerald-700 flex flex-col items-start"
+          >
+            <span className="font-medium">Garder le format d&apos;origine</span>
+            <span className="text-[10px] opacity-80 mt-0.5">{inplaceLabel[ext]}</span>
+          </button>
+        )}
         <button
           onClick={() => onExport('html')}
           className="px-3 py-2 text-sm rounded-md bg-indigo-600 text-white hover:bg-indigo-700"

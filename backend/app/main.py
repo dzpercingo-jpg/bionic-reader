@@ -1,14 +1,17 @@
 """FastAPI entrypoint for Bionic Reader Pro."""
 from __future__ import annotations
 
+import json
 import logging
+from pathlib import Path
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
 from .exporters import SUPPORTED_EXPORTS, get_exporter
-from .models import ExportRequest
+from .inplace import SUPPORTED_INPLACE, get_inplace_exporter
+from .models import BionicSettings, ExportRequest
 from .parsers import SUPPORTED_EXTENSIONS, parse_bytes
 
 logger = logging.getLogger("bionic_reader")
@@ -41,6 +44,7 @@ def formats() -> dict[str, list[str]]:
     return {
         "input": SUPPORTED_EXTENSIONS,
         "output": SUPPORTED_EXPORTS,
+        "inplace": SUPPORTED_INPLACE,
     }
 
 
@@ -70,6 +74,60 @@ def export(req: ExportRequest):
     except Exception as exc:
         logger.exception("export failed")
         raise HTTPException(status_code=500, detail=f"Export failed: {exc}") from exc
+    return Response(
+        content=body,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.post("/api/export-inplace")
+async def export_inplace(
+    file: UploadFile = File(..., description="Original file bytes to transform in-place."),
+    settings: str = Form(..., description="BionicSettings as JSON string."),
+):
+    """Apply bionic transformation directly on the user's original file.
+
+    Preserves images, tables, charts, embedded objects, fonts, colors,
+    hyperlinks, headers/footers, formulas (XLSX), animations (PPTX), and
+    the overall document structure. Only word-prefix text content is
+    styled in bold. The original file is never written to disk on the
+    server.
+
+    Supported source formats: DOCX, PDF, PPTX, XLSX. The output always
+    matches the source format.
+    """
+    data = await file.read()
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large; max {MAX_UPLOAD_BYTES // (1024 * 1024)} MB.",
+        )
+    if not data:
+        raise HTTPException(status_code=400, detail="Empty file.")
+
+    ext = Path(file.filename or "document").suffix.lower().lstrip(".")
+    if ext not in SUPPORTED_INPLACE:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"In-place export not supported for .{ext} files. "
+                f"Supported: {', '.join(SUPPORTED_INPLACE)}."
+            ),
+        )
+
+    try:
+        settings_obj = BionicSettings(**json.loads(settings))
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid settings JSON: {exc}") from exc
+
+    exporter = get_inplace_exporter(ext)
+    try:
+        body, media_type, filename = exporter(data, settings_obj, file.filename or f"document.{ext}")
+    except Exception as exc:
+        logger.exception("inplace export failed")
+        raise HTTPException(status_code=500, detail=f"In-place export failed: {exc}") from exc
+
     return Response(
         content=body,
         media_type=media_type,

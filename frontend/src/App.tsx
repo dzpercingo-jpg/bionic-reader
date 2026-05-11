@@ -9,15 +9,17 @@ import WelcomePage from './components/WelcomePage'
 import OnboardingQuiz from './components/OnboardingQuiz'
 import GuidedShell from './components/GuidedShell'
 import { useApp } from './store'
-import { exportDocument } from './api'
+import { INPLACE_FORMATS, exportDocument, exportDocumentInplace, getExtension } from './api'
 import { useTts } from './hooks/useTts'
 import { THEMES } from './types'
+import type { ExportFormat } from './types'
 
 function App() {
   const {
     mode,
     onboardingDone,
     document,
+    sourceFile,
     error,
     settings,
     setError,
@@ -36,13 +38,42 @@ function App() {
     return () => window.clearTimeout(t)
   }, [error, setError])
 
-  async function handleExport(format: 'html' | 'docx' | 'txt') {
+  /**
+   * Export the current document.
+   *
+   * Behaviour:
+   * - `inplace`: keep the user's *original* file format (DOCX, PDF, PPTX, XLSX)
+   *   with images / tables / formulas / styles preserved. Requires `sourceFile`
+   *   to still be in memory and the source extension to be in `INPLACE_FORMATS`.
+   * - `html` | `docx` | `txt`: rebuild a fresh file from the parsed model
+   *   (loses some original formatting but never modifies the source).
+   */
+  async function handleExport(format: ExportFormat) {
     if (!document) return
     try {
+      const stem = document.filename.replace(/\.[^.]+$/, '')
+      if (format === 'inplace') {
+        if (!sourceFile) {
+          setError('Fichier source perdu après rechargement de la page. Recharge-le pour exporter avec préservation.')
+          return
+        }
+        const ext = getExtension(sourceFile.name)
+        if (!INPLACE_FORMATS.has(ext)) {
+          setError(`Le format .${ext} ne supporte pas l'export fidélité. Utilise un export HTML / DOCX / TXT.`)
+          return
+        }
+        const blob = await exportDocumentInplace(sourceFile, settings)
+        const url = URL.createObjectURL(blob)
+        const a = window.document.createElement('a')
+        a.href = url
+        a.download = `${stem}.bionic.${ext}`
+        a.click()
+        URL.revokeObjectURL(url)
+        return
+      }
       const blob = await exportDocument(document, settings, format, document.filename)
       const url = URL.createObjectURL(blob)
       const a = window.document.createElement('a')
-      const stem = document.filename.replace(/\.[^.]+$/, '')
       a.href = url
       a.download = `${stem}.bionic.${format}`
       a.click()

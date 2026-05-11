@@ -11,7 +11,7 @@ import {
 } from 'lucide-react'
 import { useApp } from '../store'
 import { PROFILE_LABELS } from '../store'
-import type { ReadingProfile, Settings } from '../types'
+import type { ExportFormat, ReadingProfile, Settings } from '../types'
 import { THEMES } from '../types'
 import { exportDocument } from '../api'
 
@@ -28,10 +28,20 @@ export default function GuidedShell({
   onExport,
 }: {
   children: React.ReactNode
-  onExport: (fmt: 'html' | 'docx' | 'txt') => void
+  onExport: (fmt: ExportFormat) => void
 }) {
-  const { settings, setSettings, setMode, profile, setOnboardingDone, applyProfile, document } =
-    useApp()
+  const {
+    settings,
+    setSettings,
+    setMode,
+    profile,
+    setOnboardingDone,
+    applyProfile,
+    document,
+    sourceFile,
+  } = useApp()
+  const inplaceExt = sourceFile?.name.split('.').pop()?.toLowerCase() ?? ''
+  const canInplace = ['pdf', 'docx', 'pptx', 'xlsx'].includes(inplaceExt)
   const [exportOpen, setExportOpen] = useState(false)
 
   const theme = THEMES[settings.theme]
@@ -159,6 +169,21 @@ export default function GuidedShell({
                   className="absolute bottom-full right-0 mb-2 rounded-xl shadow-lg overflow-hidden text-sm min-w-[160px]"
                   style={{ background: theme.bg, border: `1px solid ${theme.border}` }}
                 >
+                  {canInplace && (
+                    <button
+                      onClick={() => {
+                        onExport('inplace')
+                        setExportOpen(false)
+                      }}
+                      className="block w-full text-left px-4 py-2.5 hover:bg-black/5 border-b"
+                      style={{ borderColor: theme.border, color: theme.accent }}
+                    >
+                      <div className="font-medium">Garder le {inplaceExt.toUpperCase()}</div>
+                      <div className="text-[10px] opacity-70">
+                        Préserve images, tableaux & mise en page
+                      </div>
+                    </button>
+                  )}
                   {(['html', 'docx', 'txt'] as const).map((f) => (
                     <button
                       key={f}

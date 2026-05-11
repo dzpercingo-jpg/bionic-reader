@@ -11,6 +11,13 @@ interface AppState {
 
   // Document & UI state
   document: Document | null
+  /**
+   * The original uploaded `File` object (DOCX/PDF/PPTX/XLSX). Kept in memory
+   * so we can ship its raw bytes back to the in-place exporter endpoint and
+   * produce a fidelity-preserving transformed file. Cleared whenever the
+   * user loads a different document. Not persisted to localStorage.
+   */
+  sourceFile: File | null
   settings: Settings
   busy: boolean
   error: string | null
@@ -20,7 +27,7 @@ interface AppState {
   setOnboardingDone: (b: boolean) => void
   setProfile: (p: ReadingProfile) => void
   applyProfile: (p: ReadingProfile) => void
-  setDocument: (d: Document | null) => void
+  setDocument: (d: Document | null, file?: File | null) => void
   setSettings: (patch: Partial<Settings>) => void
   resetSettings: () => void
   setBusy: (b: boolean) => void
@@ -153,6 +160,7 @@ export const useApp = create<AppState>()(
       profile: null,
 
       document: null,
+      sourceFile: null,
       settings: defaultSettings,
       busy: false,
       error: null,
@@ -171,7 +179,8 @@ export const useApp = create<AppState>()(
           settings: { ...defaultSettings, ...preset },
         })
       },
-      setDocument: (d) => set({ document: d, error: null }),
+      setDocument: (d, file = null) =>
+        set({ document: d, sourceFile: file ?? null, error: null }),
       setSettings: (patch) => set((state) => ({ settings: { ...state.settings, ...patch } })),
       resetSettings: () => set({ settings: { ...defaultSettings } }),
       setBusy: (busy) => set({ busy }),

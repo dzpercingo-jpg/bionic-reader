@@ -60,6 +60,39 @@ export function settingsToBackend(s: Settings): BionicSettings {
   }
 }
 
+/**
+ * Apply bionic transformation directly on the user's original file bytes.
+ *
+ * Preserves images, tables, charts, embedded objects, formulas (XLSX),
+ * animations (PPTX), fonts, colors, headers/footers, and the document's
+ * overall structure. The output file's format always matches the source
+ * format.
+ */
+export async function exportDocumentInplace(
+  file: File,
+  settings: Settings,
+): Promise<Blob> {
+  const fd = new FormData()
+  fd.append('file', file)
+  fd.append('settings', JSON.stringify(settingsToBackend(settings)))
+  const res = await fetch(`${API_BASE}/api/export-inplace`, {
+    method: 'POST',
+    body: fd,
+  })
+  if (!res.ok) {
+    const detail = await safeDetail(res)
+    throw new Error(detail ?? `In-place export failed (${res.status})`)
+  }
+  return await res.blob()
+}
+
+export const INPLACE_FORMATS = new Set(['pdf', 'docx', 'pptx', 'xlsx'])
+
+export function getExtension(filename: string): string {
+  const i = filename.lastIndexOf('.')
+  return i === -1 ? '' : filename.slice(i + 1).toLowerCase()
+}
+
 async function safeDetail(res: Response): Promise<string | null> {
   try {
     const j = await res.json()

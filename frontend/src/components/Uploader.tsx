@@ -5,7 +5,10 @@ import clsx from 'clsx'
 import { useApp } from '../store'
 import { parseFile } from '../api'
 
-const ACCEPTED_EXT = ['pdf', 'docx', 'doc', 'txt', 'md', 'markdown', 'html', 'htm', 'epub', 'rtf']
+const ACCEPTED_EXT = [
+  'pdf', 'docx', 'doc', 'pptx', 'xlsx', 'txt', 'md', 'markdown',
+  'html', 'htm', 'epub', 'rtf',
+]
 
 export default function Uploader() {
   const { setDocument, setBusy, setError, busy } = useApp()
@@ -18,7 +21,9 @@ export default function Uploader() {
       setError(null)
       try {
         const doc = await parseFile(file)
-        setDocument(doc)
+        // Keep the original File around so we can call /api/export-inplace
+        // later and preserve images, tables, formulas, etc.
+        setDocument(doc, file)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Erreur de lecture du fichier')
       } finally {
@@ -35,6 +40,8 @@ export default function Uploader() {
       'application/pdf': ['.pdf'],
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
       'application/msword': ['.doc'],
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation': ['.pptx'],
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
       'application/epub+zip': ['.epub'],
       'application/rtf': ['.rtf'],
       'text/plain': ['.txt'],

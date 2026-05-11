@@ -19,6 +19,8 @@ EXT_PARSER_MODULES: dict[str, tuple[str, str]] = {
     "pdf": ("pdf_parser", "parse"),
     "docx": ("docx_parser", "parse"),
     "doc": ("docx_parser", "parse"),
+    "pptx": ("pptx_parser", "parse"),
+    "xlsx": ("xlsx_parser", "parse"),
     "txt": ("txt_parser", "parse"),
     "md": ("md_parser", "parse"),
     "markdown": ("md_parser", "parse"),
