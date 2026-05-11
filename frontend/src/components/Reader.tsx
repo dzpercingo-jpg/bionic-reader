@@ -47,9 +47,10 @@ export default function Reader({ ttsActiveWord }: { ttsActiveWord: number | null
 
   // Pulse cadence : a slow horizontal cursor that descends through the text.
   // wpm → pixels-per-second mapping assumes ~1 line ≈ 35 px, ~10 words per line.
+  // Divide by 60 to convert words-per-minute → words-per-second.
   useEffect(() => {
     if (!settings.pulseCadence) return
-    const pixelsPerSecond = (settings.pulseCadenceWpm / 10) * 35
+    const pixelsPerSecond = ((settings.pulseCadenceWpm / 10) * 35) / 60
     let raf = 0
     let lastT = performance.now()
     const tick = (t: number) => {
@@ -58,7 +59,7 @@ export default function Reader({ ttsActiveWord }: { ttsActiveWord: number | null
       setPulseY((y) => {
         const next = y + dt * pixelsPerSecond
         const container = containerRef.current
-        if (container && next > container.clientHeight) return 0
+        if (container && next > container.scrollHeight) return 0
         return next
       })
       raf = requestAnimationFrame(tick)
