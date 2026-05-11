@@ -5,8 +5,13 @@ import type { Block, Settings } from '../types'
 import { chunkifyHtml, transformTextHtml } from '../lib/bionic'
 
 function blockHtml(block: Block, settings: Settings): string {
-  const html = transformTextHtml(block.text, settings)
-  return settings.chunkingEnabled ? chunkifyHtml(html, settings.chunkSize) : html
+  // transformTextHtml now handles phrase chunking internally (at source level)
+  // so HTML nesting is never broken across phrase boundaries.
+  let html = transformTextHtml(block.text, settings)
+  if (settings.chunkingEnabled) {
+    html = chunkifyHtml(html, settings.chunkSize)
+  }
+  return html
 }
 
 export default function Reader({ ttsActiveWord }: { ttsActiveWord: number | null }) {
@@ -14,10 +19,15 @@ export default function Reader({ ttsActiveWord }: { ttsActiveWord: number | null
   const containerRef = useRef<HTMLDivElement>(null)
   const [rulerY, setRulerY] = useState<number | null>(null)
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null)
+  const [pulseY, setPulseY] = useState<number>(0)
 
   const theme = THEMES[settings.theme]
-  const bg = settings.theme === 'cream' ? settings.customBg : theme.bg
-  const fg = settings.theme === 'cream' ? settings.customFg : theme.fg
+  // Background uses overlayColor as a *tint* of the theme bg when overlay enabled
+  // (NOT a floating layer on top — that's the bug we fix).
+  const bg = settings.overlayEnabled
+    ? mixColors(theme.bg, settings.overlayColor, settings.overlayOpacity)
+    : theme.bg
+  const fg = theme.fg
 
   const flatWordCount = useMemo(() => {
     if (!document) return 0
@@ -34,6 +44,28 @@ export default function Reader({ ttsActiveWord }: { ttsActiveWord: number | null
     window.addEventListener('mousemove', handleMove)
     return () => window.removeEventListener('mousemove', handleMove)
   }, [settings.rulerEnabled])
+
+  // Pulse cadence : a slow horizontal cursor that descends through the text.
+  // wpm → pixels-per-second mapping assumes ~1 line ≈ 35 px, ~10 words per line.
+  useEffect(() => {
+    if (!settings.pulseCadence) return
+    const pixelsPerSecond = (settings.pulseCadenceWpm / 10) * 35
+    let raf = 0
+    let lastT = performance.now()
+    const tick = (t: number) => {
+      const dt = (t - lastT) / 1000
+      lastT = t
+      setPulseY((y) => {
+        const next = y + dt * pixelsPerSecond
+        const container = containerRef.current
+        if (container && next > container.clientHeight) return 0
+        return next
+      })
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [settings.pulseCadence, settings.pulseCadenceWpm])
 
   if (!document) return null
 
@@ -60,19 +92,22 @@ export default function Reader({ ttsActiveWord }: { ttsActiveWord: number | null
   }
 
   return (
-    <div ref={containerRef} style={containerStyle} className="flex-1 overflow-y-auto br-scroll">
-      {settings.overlayEnabled && (
-        <div
-          className="br-overlay"
-          style={{ background: settings.overlayColor, opacity: settings.overlayOpacity }}
-        />
-      )}
+    <div ref={containerRef} style={containerStyle} className="h-full overflow-y-auto br-scroll relative">
       {settings.rulerEnabled && rulerY !== null && (
         <div className="br-ruler" style={{ top: rulerY - 14 }} />
       )}
+      {settings.pulseCadence && (
+        <div
+          className="br-pulse-cadence"
+          style={{ top: pulseY, borderColor: theme.muted }}
+        />
+      )}
 
-      <article style={readerStyle} className={settings.focusModeEnabled ? 'br-focus-dim' : ''}>
-        <header className="mb-6 pb-3 border-b border-stone-200/30">
+      <article
+        style={readerStyle}
+        className={settings.focusModeEnabled ? 'br-focus-dim' : ''}
+      >
+        <header className="mb-6 pb-3" style={{ borderBottom: `1px solid ${theme.border}` }}>
           <h1 style={{ fontSize: '1.6em', fontWeight: 700, margin: 0 }}>{document.filename}</h1>
           <p className="text-sm opacity-60 mt-1">
             {document.format.toUpperCase()} · {flatWordCount.toLocaleString('fr')} mots ·
@@ -116,6 +151,7 @@ function renderBlock(
     style: {
       opacity: dim,
       marginBottom: `${settings.paragraphSpacing}em`,
+      transition: 'opacity 0.3s ease',
     } as React.CSSProperties,
     'data-block-index': index,
   }
@@ -144,7 +180,7 @@ function renderBlock(
         style={{
           ...baseProps.style,
           borderLeft: '4px solid currentColor',
-          opacity: 0.75,
+          opacity: dim * 0.85,
           paddingLeft: '1em',
           fontStyle: 'italic',
         }}
@@ -207,4 +243,25 @@ function renderHeading(
       dangerouslySetInnerHTML={{ __html: html }}
     />
   )
+}
+
+/** Blend two hex colors (#rrggbb) with the given opacity for the overlay color. */
+function mixColors(base: string, overlay: string, opacity: number): string {
+  const b = hexToRgb(base)
+  const o = hexToRgb(overlay)
+  if (!b || !o) return base
+  const r = Math.round(b.r * (1 - opacity) + o.r * opacity)
+  const g = Math.round(b.g * (1 - opacity) + o.g * opacity)
+  const bl = Math.round(b.b * (1 - opacity) + o.b * opacity)
+  return `rgb(${r}, ${g}, ${bl})`
+}
+
+function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
+  const m = /^#?([a-f0-9]{2})([a-f0-9]{2})([a-f0-9]{2})$/i.exec(hex)
+  if (!m) return null
+  return {
+    r: parseInt(m[1], 16),
+    g: parseInt(m[2], 16),
+    b: parseInt(m[3], 16),
+  }
 }

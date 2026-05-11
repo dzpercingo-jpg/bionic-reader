@@ -40,17 +40,30 @@ class DocumentModel(BaseModel):
 
 
 class BionicSettings(BaseModel):
-    """All knobs supported by the bionic transformation engine."""
+    """All knobs supported by the bionic transformation engine.
+
+    v2 adds council-driven techniques:
+    - eye_anchor: gray dot at the Optimal Viewing Position of each word
+    - phrase_chunking: thin spacer every N words to expose phrase groups
+    - pos_coloring: subtle hue on logical connectors
+    """
 
     enabled: bool = True
-    fixation_ratio: float = Field(default=0.5, ge=0.2, le=0.8)
-    min_word_length: int = Field(default=2, ge=1, le=10)
+    fixation_ratio: float = Field(default=0.4, ge=0.2, le=0.8)
+    min_word_length: int = Field(default=4, ge=1, le=10)
     skip_short_words: bool = True
     use_color_instead_of_bold: bool = False
-    prefix_color: str = "#111111"
+    prefix_color: str = "#0f172a"
     color_vowels: bool = False
     vowel_color: str = "#dc2626"
     saccade_adaptive: bool = True
+    # v2 fields (optional for backwards compat with older clients)
+    eye_anchor: bool = False
+    eye_anchor_color: str = "#9a958e"
+    phrase_chunking: bool = False
+    phrase_chunk_size: int = Field(default=4, ge=2, le=10)
+    pos_coloring: bool = False
+    pos_color: str = "#a05a1a"
 
 
 class ExportRequest(BaseModel):

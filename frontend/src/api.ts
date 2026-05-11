@@ -51,6 +51,12 @@ export function settingsToBackend(s: Settings): BionicSettings {
     color_vowels: s.colorVowels,
     vowel_color: s.vowelColor,
     saccade_adaptive: s.saccadeAdaptive,
+    eye_anchor: s.eyeAnchor,
+    eye_anchor_color: s.eyeAnchorColor,
+    phrase_chunking: s.phraseChunking,
+    phrase_chunk_size: s.phraseChunkSize,
+    pos_coloring: s.posColoring,
+    pos_color: s.posColor,
   }
 }
 

@@ -8,6 +8,7 @@ import {
   Zap,
   Settings as Cog,
   RotateCcw,
+  Atom,
 } from 'lucide-react'
 import { useState } from 'react'
 import clsx from 'clsx'
@@ -15,11 +16,12 @@ import { useApp } from '../store'
 import type { Settings } from '../types'
 import { THEMES } from '../types'
 
-type Panel = 'bionic' | 'typo' | 'theme' | 'aids' | 'rsvp' | 'tts' | 'export'
+type Panel = 'bionic' | 'advanced' | 'typo' | 'theme' | 'aids' | 'rsvp' | 'tts' | 'export'
 
 const PANELS: { id: Panel; label: string; icon: React.FC<{ className?: string }> }[] = [
   { id: 'bionic', label: 'Bionic', icon: BookOpen },
-  { id: 'typo', label: 'Typographie', icon: Type },
+  { id: 'advanced', label: 'Avancé', icon: Atom },
+  { id: 'typo', label: 'Typo', icon: Type },
   { id: 'theme', label: 'Couleurs', icon: Palette },
   { id: 'aids', label: 'Aides', icon: Eye },
   { id: 'rsvp', label: 'RSVP', icon: Zap },
@@ -77,6 +79,7 @@ export default function Toolbar({
 
       <div className="flex-1 overflow-y-auto br-scroll p-4 space-y-6">
         {active === 'bionic' && <BionicPanel settings={settings} setSettings={setSettings} />}
+        {active === 'advanced' && <AdvancedPanel settings={settings} setSettings={setSettings} />}
         {active === 'typo' && <TypoPanel settings={settings} setSettings={setSettings} />}
         {active === 'theme' && <ThemePanel settings={settings} setSettings={setSettings} />}
         {active === 'aids' && <AidsPanel settings={settings} setSettings={setSettings} />}
@@ -271,6 +274,83 @@ function BionicPanel({ settings, setSettings }: PanelProps) {
         />
       )}
     </Section>
+  )
+}
+
+function AdvancedPanel({ settings, setSettings }: PanelProps) {
+  return (
+    <>
+      <Section title="Techniques avancées (conseil d'experts)">
+        <p className="text-xs text-stone-500">
+          Combinaison de techniques issues de la recherche en neurosciences de la lecture, design
+          d&apos;information et clinique TDAH. Voir COUNCIL.md du repo.
+        </p>
+        <Toggle
+          label="Point OVP (Dehaene)"
+          description="Petit point gris à la position de fixation optimale de chaque mot."
+          checked={settings.eyeAnchor}
+          onChange={(v) => setSettings({ eyeAnchor: v })}
+        />
+        {settings.eyeAnchor && (
+          <ColorRow
+            label="Couleur du point"
+            value={settings.eyeAnchorColor}
+            onChange={(v) => setSettings({ eyeAnchorColor: v })}
+          />
+        )}
+        <Toggle
+          label="Phrase chunking (Pinker)"
+          description="Petite respiration visuelle tous les N mots."
+          checked={settings.phraseChunking}
+          onChange={(v) => setSettings({ phraseChunking: v })}
+        />
+        {settings.phraseChunking && (
+          <Slider
+            label="Mots par groupe"
+            value={settings.phraseChunkSize}
+            min={2}
+            max={8}
+            onChange={(v) => setSettings({ phraseChunkSize: v })}
+          />
+        )}
+        <Toggle
+          label="POS coloring (Pinker, Treisman)"
+          description="Colore subtilement les connecteurs logiques (mais, donc, parce que…)."
+          checked={settings.posColoring}
+          onChange={(v) => setSettings({ posColoring: v })}
+        />
+        {settings.posColoring && (
+          <ColorRow
+            label="Couleur connecteurs"
+            value={settings.posColor}
+            onChange={(v) => setSettings({ posColor: v })}
+          />
+        )}
+        <Toggle
+          label="Cadence pulse (Hallowell)"
+          description="Une ligne grise descend lentement à travers le texte."
+          checked={settings.pulseCadence}
+          onChange={(v) => setSettings({ pulseCadence: v })}
+        />
+        {settings.pulseCadence && (
+          <Slider
+            label="Vitesse de cadence"
+            value={settings.pulseCadenceWpm}
+            min={120}
+            max={400}
+            step={10}
+            unit=" wpm"
+            onChange={(v) => setSettings({ pulseCadenceWpm: v })}
+          />
+        )}
+        <Toggle
+          label="Respiration de mot (Csikszentmihalyi)"
+          description="Pulse de poids sur le mot en cours de lecture audio (au lieu du surlignage jaune)."
+          checked={settings.breathingWord}
+          onChange={(v) => setSettings({ breathingWord: v })}
+        />
+      </Section>
+    </>
   )
 }
 

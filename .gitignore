@@ -25,3 +25,9 @@ Thumbs.db
 
 # Fly
 .fly/
+
+# Local test artifacts (not part of source)
+test-report.md
+TEST_PLAN.md
+backend/.venv/
+.adhd_sim_cache/
