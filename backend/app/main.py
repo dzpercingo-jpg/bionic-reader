@@ -12,6 +12,7 @@ from fastapi.responses import Response
 from .exporters import SUPPORTED_EXPORTS, get_exporter
 from .inplace import SUPPORTED_INPLACE, get_inplace_exporter
 from .models import BionicSettings, ExportRequest
+from .onboarding import AssessmentRequest, AssessmentResult, score_assessment
 from .parsers import SUPPORTED_EXTENSIONS, parse_bytes
 
 logger = logging.getLogger("bionic_reader")
@@ -139,3 +140,19 @@ async def export_inplace(
         media_type=media_type,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@app.post("/api/onboarding/score", response_model=AssessmentResult)
+def onboarding_score(req: AssessmentRequest) -> AssessmentResult:
+    """Score a completed ADHD-aware onboarding assessment.
+
+    Combines ASRS-v1.1 self-report (6 items), a Psychomotor Vigilance
+    Task (PVT) and a reading-speed trial into a 4-dim profile vector
+    and maps it to one of the bionic anchor presets with a fully
+    interpolated settings dict so the frontend can either snap to the
+    anchor or apply the blended values directly.
+
+    The endpoint never raises — missing stages degrade confidence
+    rather than rejecting the request.
+    """
+    return score_assessment(req)

@@ -111,6 +111,70 @@ function parseContentDispositionFilename(header: string | null): string | null {
 
 export const INPLACE_FORMATS = new Set(['pdf', 'doc', 'docx', 'pptx', 'xlsx'])
 
+// ----------------------------------------------------------------------------
+// Onboarding scoring API
+// ----------------------------------------------------------------------------
+
+export interface AsrsAnswerPayload {
+  qid: 'q1' | 'q2' | 'q3' | 'q4' | 'q5' | 'q6'
+  score: 0 | 1 | 2 | 3 | 4
+}
+
+export interface PvtTrialPayload {
+  rt_ms: number
+  false_start: boolean
+  lapse: boolean
+}
+
+export interface ReadingTrialPayload {
+  word_count: number
+  elapsed_ms: number
+  comprehension_correct?: number
+  comprehension_total?: number
+}
+
+export interface AssessmentPayload {
+  asrs: AsrsAnswerPayload[]
+  pvt: PvtTrialPayload[]
+  reading: ReadingTrialPayload | null
+  locale?: string | null
+}
+
+export interface ProfileVectorResp {
+  inattention: number
+  hyperactivity: number
+  reading_speed_wpm: number
+  consistency: number
+  confidence: number
+}
+
+export interface RecommendedPresetResp {
+  profile: 'apaise' | 'equilibre' | 'concentre' | 'sprint'
+  rationale: string
+  settings: Record<string, string | number | boolean>
+  profile_weights: Record<string, number>
+}
+
+export interface AssessmentResultResp {
+  profile: ProfileVectorResp
+  preset: RecommendedPresetResp
+}
+
+export async function scoreOnboarding(
+  payload: AssessmentPayload,
+): Promise<AssessmentResultResp> {
+  const res = await fetch(`${API_BASE}/api/onboarding/score`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  if (!res.ok) {
+    const detail = await safeDetail(res)
+    throw new Error(detail ?? `Onboarding score failed (${res.status})`)
+  }
+  return (await res.json()) as AssessmentResultResp
+}
+
 export function getExtension(filename: string): string {
   const i = filename.lastIndexOf('.')
   return i === -1 ? '' : filename.slice(i + 1).toLowerCase()

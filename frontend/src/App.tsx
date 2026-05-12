@@ -6,7 +6,7 @@ import Reader from './components/Reader'
 import RsvpView from './components/RsvpView'
 import TtsBar from './components/TtsBar'
 import WelcomePage from './components/WelcomePage'
-import OnboardingQuiz from './components/OnboardingQuiz'
+import OnboardingV2 from './components/OnboardingV2'
 import GuidedShell from './components/GuidedShell'
 import { useApp } from './store'
 import { INPLACE_FORMATS, exportDocument, exportDocumentInplace, getExtension } from './api'
@@ -93,7 +93,7 @@ function App() {
   // Route 2: Guided mode — onboarding quiz then guided shell
   if (mode === 'guided') {
     if (!onboardingDone) {
-      return <OnboardingQuiz onDone={() => undefined} />
+      return <OnboardingV2 onDone={() => undefined} />
     }
     return (
       <GuidedShell onExport={handleExport}>
