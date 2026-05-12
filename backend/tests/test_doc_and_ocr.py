@@ -185,7 +185,14 @@ def test_pdf_inplace_falls_back_when_ocr_raises_arbitrary_error(
 
 def test_ocr_pdf_closes_document_on_exception(monkeypatch: pytest.MonkeyPatch) -> None:
     """Regression: if OCR raises mid-loop, the fitz.Document must still be
-    closed (no native-resource leak in the server)."""
+    closed (no native-resource leak in the server).
+
+    Two layers of resource management to verify:
+    1. The cheap `needs_ocr` detection opens a fitz.Document and must
+       close it via try/finally.
+    2. The manual Tesseract fallback (`_ocr_with_tesseract`) opens a
+       fitz.Document and must close it even if pytesseract raises mid-loop.
+    """
     from app.inplace import pdf_ocr as pdf_ocr_mod
 
     src_path = FIXTURES / "scanned_image_only.pdf"
@@ -209,7 +216,13 @@ def test_ocr_pdf_closes_document_on_exception(monkeypatch: pytest.MonkeyPatch) -
 
     monkeypatch.setattr(pdf_ocr_mod.fitz, "open", tracked_open)
 
-    # Force pytesseract.image_to_data to raise an arbitrary error.
+    # Force the primary engine (ocrmypdf) to raise so the fallback engages.
+    def _ocrmypdf_boom(_d: bytes, _l: str) -> bytes:  # noqa: ANN001
+        raise RuntimeError("simulated ocrmypdf failure")
+
+    monkeypatch.setattr(pdf_ocr_mod, "_ocr_with_ocrmypdf", _ocrmypdf_boom)
+
+    # Then force pytesseract.image_to_data in the fallback to raise.
     import pytesseract
 
     def _boom(*_a, **_kw):  # noqa: ANN001, ANN003, ANN202
