@@ -62,10 +62,11 @@ def export_inplace(
         try:
             if needs_ocr(data):
                 data = ocr_pdf(data)
-        except RuntimeError:
-            # Tesseract not installed — fall back to non-OCR path. The caller
-            # will see a PDF with no bionic bold on scanned pages but the file
-            # is still valid and other pages still get styled.
+        except Exception:
+            # OCR unavailable or failed (Tesseract missing, bad language pack,
+            # PIL/fitz raster error, etc.) — fall back to the non-OCR path.
+            # The caller will see a PDF with no bionic bold on scanned pages
+            # but the file is still valid and other pages still get styled.
             pass
 
     doc = fitz.open(stream=data, filetype="pdf")

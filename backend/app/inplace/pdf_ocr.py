@@ -51,75 +51,74 @@ def ocr_pdf(data: bytes, lang: str = "eng+fra") -> bytes:
     from PIL import Image
 
     doc = fitz.open(stream=data, filetype="pdf")
-    any_modified = False
+    try:
+        any_modified = False
 
-    for page in doc:
-        if not page_needs_ocr(page):
-            continue
-
-        # Render the page to a high-DPI PNG that Tesseract can process.
-        zoom = _RASTER_DPI / 72.0
-        matrix = fitz.Matrix(zoom, zoom)
-        pix = page.get_pixmap(matrix=matrix, alpha=False)
-        img = Image.open(io.BytesIO(pix.tobytes("png")))
-
-        try:
-            data_dict = pytesseract.image_to_data(
-                img,
-                lang=lang,
-                output_type=pytesseract.Output.DICT,
-            )
-        except pytesseract.TesseractNotFoundError as exc:
-            raise RuntimeError(
-                "Tesseract OCR is required for scanned PDFs but is not installed. "
-                "Install via `apt install tesseract-ocr tesseract-ocr-fra tesseract-ocr-eng`."
-            ) from exc
-
-        n_words = len(data_dict.get("text", []))
-        for i in range(n_words):
-            word = (data_dict["text"][i] or "").strip()
-            conf_str = str(data_dict.get("conf", [-1])[i])
-            try:
-                conf = float(conf_str)
-            except ValueError:
-                conf = -1.0
-            if not word or conf < 0:
+        for page in doc:
+            if not page_needs_ocr(page):
                 continue
 
-            # Map pixel coordinates back to PDF points (1pt == 1/72 inch).
-            x = data_dict["left"][i] / zoom
-            y = data_dict["top"][i] / zoom
-            h = data_dict["height"][i] / zoom
+            # Render the page to a high-DPI PNG that Tesseract can process.
+            zoom = _RASTER_DPI / 72.0
+            matrix = fitz.Matrix(zoom, zoom)
+            pix = page.get_pixmap(matrix=matrix, alpha=False)
+            img = Image.open(io.BytesIO(pix.tobytes("png")))
 
-            # render_mode=3 ⇒ "invisible text". Word is selectable but does
-            # not appear visually. Anchor at the baseline (bottom-left).
             try:
-                page.insert_text(
-                    (x, y + h * 0.85),
-                    word,
-                    fontsize=max(4.0, h * 0.9),
-                    fontname="helv",
-                    color=(0, 0, 0),
-                    render_mode=3,
-                    overlay=True,
+                data_dict = pytesseract.image_to_data(
+                    img,
+                    lang=lang,
+                    output_type=pytesseract.Output.DICT,
                 )
-                any_modified = True
-            except Exception:
-                # Skip a word that PyMuPDF can't render (unicode oddities, etc).
-                continue
+            except pytesseract.TesseractNotFoundError as exc:
+                raise RuntimeError(
+                    "Tesseract OCR is required for scanned PDFs but is not installed. "
+                    "Install via `apt install tesseract-ocr tesseract-ocr-fra tesseract-ocr-eng`."
+                ) from exc
 
-    if not any_modified:
-        # Even though we didn't touch any page, return a clean re-save so
-        # callers get a consistent bytestream.
+            n_words = len(data_dict.get("text", []))
+            for i in range(n_words):
+                word = (data_dict["text"][i] or "").strip()
+                conf_str = str(data_dict.get("conf", [-1])[i])
+                try:
+                    conf = float(conf_str)
+                except ValueError:
+                    conf = -1.0
+                if not word or conf < 0:
+                    continue
+
+                # Map pixel coordinates back to PDF points (1pt == 1/72 inch).
+                x = data_dict["left"][i] / zoom
+                y = data_dict["top"][i] / zoom
+                h = data_dict["height"][i] / zoom
+
+                # render_mode=3 ⇒ "invisible text". Word is selectable but does
+                # not appear visually. Anchor at the baseline (bottom-left).
+                try:
+                    page.insert_text(
+                        (x, y + h * 0.85),
+                        word,
+                        fontsize=max(4.0, h * 0.9),
+                        fontname="helv",
+                        color=(0, 0, 0),
+                        render_mode=3,
+                        overlay=True,
+                    )
+                    any_modified = True
+                except Exception:
+                    # Skip a word that PyMuPDF can't render (unicode oddities, etc).
+                    continue
+
         out = io.BytesIO()
-        doc.save(out)
-        doc.close()
+        if any_modified:
+            doc.save(out, garbage=3, deflate=True)
+        else:
+            # Even though we didn't touch any page, return a clean re-save so
+            # callers get a consistent bytestream.
+            doc.save(out)
         return out.getvalue()
-
-    out = io.BytesIO()
-    doc.save(out, garbage=3, deflate=True)
-    doc.close()
-    return out.getvalue()
+    finally:
+        doc.close()
 
 
 def needs_ocr(data: bytes) -> bool:

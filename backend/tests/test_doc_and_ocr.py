@@ -151,3 +151,73 @@ def test_pdf_inplace_with_ocr_disabled_skips_ocr(settings: BionicSettings) -> No
     out_doc.close()
     # With OCR disabled, no text layer is added → scanned page still has no text.
     assert out_text == ""
+
+
+def test_pdf_inplace_falls_back_when_ocr_raises_arbitrary_error(
+    monkeypatch: pytest.MonkeyPatch, settings: BionicSettings
+) -> None:
+    """Regression: ocr=True must not crash the whole export if OCR raises
+    something other than RuntimeError (e.g. pytesseract.TesseractError, PIL
+    error, fitz error during rasterization). The non-OCR path must take over
+    silently so the user still gets a valid PDF for text pages."""
+    from app.inplace import pdf_inplace as pdf_inplace_mod
+
+    def _boom(_data: bytes) -> bytes:  # noqa: ANN001
+        raise ValueError("simulated OCR backend failure")
+
+    monkeypatch.setattr(pdf_inplace_mod, "needs_ocr", lambda _d: True)
+    monkeypatch.setattr(pdf_inplace_mod, "ocr_pdf", _boom)
+
+    src_path = FIXTURES / "with_image_and_table.pdf"
+    data = src_path.read_bytes()
+
+    # Must not raise — the broad except in pdf_inplace catches ANY OCR failure.
+    out_bytes, mime, name = pdf_inplace_mod.export_inplace(
+        data, settings, src_path.name, ocr=True
+    )
+    assert mime == "application/pdf"
+    assert name.endswith(".bionic.pdf")
+    # Output is a valid PDF and the text pages still got the bionic pass.
+    out_doc = fitz.open(stream=out_bytes, filetype="pdf")
+    assert out_doc.page_count >= 1
+    out_doc.close()
+
+
+def test_ocr_pdf_closes_document_on_exception(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Regression: if OCR raises mid-loop, the fitz.Document must still be
+    closed (no native-resource leak in the server)."""
+    from app.inplace import pdf_ocr as pdf_ocr_mod
+
+    src_path = FIXTURES / "scanned_image_only.pdf"
+    if not src_path.exists():
+        pytest.skip("scanned_image_only.pdf fixture missing")
+    data = src_path.read_bytes()
+
+    closed: list[bool] = []
+    real_open = pdf_ocr_mod.fitz.open
+
+    def tracked_open(*args, **kwargs):  # noqa: ANN001, ANN201
+        d = real_open(*args, **kwargs)
+        original_close = d.close
+
+        def _close() -> None:
+            closed.append(True)
+            original_close()
+
+        d.close = _close  # type: ignore[method-assign]
+        return d
+
+    monkeypatch.setattr(pdf_ocr_mod.fitz, "open", tracked_open)
+
+    # Force pytesseract.image_to_data to raise an arbitrary error.
+    import pytesseract
+
+    def _boom(*_a, **_kw):  # noqa: ANN001, ANN003, ANN202
+        raise pytesseract.TesseractNotFoundError()
+
+    monkeypatch.setattr(pytesseract, "image_to_data", _boom)
+
+    with pytest.raises(RuntimeError, match="Tesseract"):
+        pdf_ocr_mod.ocr_pdf(data)
+
+    assert closed, "fitz.Document.close() must be called even when ocr_pdf raises"
