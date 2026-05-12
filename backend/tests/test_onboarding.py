@@ -175,3 +175,28 @@ def test_onboarding_endpoint_rejects_extra_fields() -> None:
     resp = client.post("/api/onboarding/score", json=payload)
     # extra=forbid → 422
     assert resp.status_code == 422
+
+
+def test_onboarding_endpoint_accepts_long_pvt_rt() -> None:
+    """A real user can lose focus mid-trial; the canonical PVT timeout is
+    30 s. The schema must accept that without rejecting the full payload.
+
+    Regression test for an earlier bound of ``le=5000`` that caused 422
+    errors in production whenever a single trial drifted above 5 s.
+    """
+    payload = {
+        "asrs": [{"qid": f"q{i+1}", "score": 1} for i in range(6)],
+        "pvt": [
+            {"rt_ms": 350.0, "false_start": False, "lapse": False},
+            {"rt_ms": 6000.0, "false_start": False, "lapse": True},
+            {"rt_ms": 30_000.0, "false_start": False, "lapse": True},
+            {"rt_ms": 0.0, "false_start": True, "lapse": False},
+        ],
+        "reading": {"word_count": 60, "elapsed_ms": 18_000},
+    }
+    resp = client.post("/api/onboarding/score", json=payload)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    # 30 s RT should be folded into the (clipped) inattention proxy
+    # and not break the bounds on the output profile.
+    assert 0 <= body["profile"]["inattention"] <= 100

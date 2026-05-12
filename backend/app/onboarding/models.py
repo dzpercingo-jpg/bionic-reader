@@ -43,9 +43,17 @@ class PvtTrial(BaseModel):
     means the user responded before the stimulus appeared (impulsivity
     marker). `lapse=True` is derived (rt_ms > 500ms) but kept explicit
     so the frontend can transmit its own classification consistently.
+
+    Upper bound = 30 s, matching the canonical PVT timeout from
+    Dinges & Powell (1985): if a user does not respond within 30 s the
+    trial is recorded as an extreme lapse (RT = timeout) rather than
+    discarded. Anything > 5 s is already an unambiguous attention
+    failure and is collapsed by the scoring formula's clip-to-100
+    saturation, so the wider bound has no effect on the score but lets
+    us preserve the raw signal end-to-end.
     """
 
-    rt_ms: float = Field(..., ge=0, le=5000)
+    rt_ms: float = Field(..., ge=0, le=30_000)
     false_start: bool = False
     lapse: bool = False
 

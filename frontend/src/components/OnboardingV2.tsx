@@ -342,6 +342,10 @@ function AsrsStage({
 const PVT_TRIAL_COUNT = 16
 const PVT_MIN_WAIT_MS = 1000
 const PVT_MAX_WAIT_MS = 3000
+// Canonical PVT timeout (Dinges & Powell 1985): trials capped at 30 s.
+// Above this we still record a trial (don't silently drop the data) but
+// cap the value so it stays within the validated schema range.
+const PVT_MAX_RT_MS = 30_000
 
 function PvtStage({
   onDone,
@@ -391,7 +395,11 @@ function PvtStage({
         return
       }
       if (phase === 'stimulus' && stimulusStartRef.current) {
-        const rt = performance.now() - stimulusStartRef.current
+        // Cap RT at the canonical PVT timeout (30 s, Dinges & Powell 1985)
+        // so that a user who completely lost focus still yields a valid
+        // payload (the backend Pydantic schema caps at the same value).
+        const raw = performance.now() - stimulusStartRef.current
+        const rt = Math.min(Math.max(raw, 0), PVT_MAX_RT_MS)
         stimulusStartRef.current = null
         const t: PvtTrialPayload = { rt_ms: rt, false_start: false, lapse: rt > 500 }
         const next = [...trials, t]
