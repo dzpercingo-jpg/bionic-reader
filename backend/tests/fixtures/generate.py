@@ -70,7 +70,7 @@ def write_docx(image_path: Path) -> None:
 
 def write_pptx(image_path: Path) -> None:
     from pptx import Presentation
-    from pptx.util import Emu, Inches
+    from pptx.util import Inches
 
     prs = Presentation()
     slide = prs.slides.add_slide(prs.slide_layouts[5])  # title-only
@@ -166,12 +166,87 @@ def write_pdf(image_path: Path) -> None:
     doc.save(str(HERE / "with_image_and_table.pdf"))
 
 
+def write_doc_via_libreoffice() -> None:
+    """Convert with_image_and_table.docx -> with_image_and_table.doc via libreoffice.
+
+    Used by the legacy-format in-place exporter tests. Skipped silently if
+    LibreOffice is not installed on the host.
+    """
+    import shutil
+    import subprocess
+    import tempfile
+
+    soffice = shutil.which("libreoffice") or shutil.which("soffice")
+    if not soffice:
+        print("LibreOffice not installed — skipping .doc fixture")
+        return
+    src = HERE / "with_image_and_table.docx"
+    with tempfile.TemporaryDirectory() as td:
+        out = subprocess.run(
+            [
+                soffice,
+                "--headless",
+                f"-env:UserInstallation=file://{td}/profile",
+                "--convert-to",
+                "doc",
+                "--outdir",
+                td,
+                str(src),
+            ],
+            capture_output=True,
+            timeout=60,
+            check=False,
+        )
+        if out.returncode != 0:
+            print("LibreOffice failed:", out.stderr.decode(errors="ignore"))
+            return
+        produced = Path(td) / "with_image_and_table.doc"
+        if produced.exists():
+            (HERE / "with_image_and_table.doc").write_bytes(produced.read_bytes())
+
+
+def write_scanned_pdf() -> None:
+    """Render a few sentences as a JPEG and embed in a no-text PDF.
+
+    Used to verify the OCR pre-processing step adds an invisible text layer
+    so the in-place exporter can apply bionic styling to scanned PDFs.
+    """
+    import io as _io
+
+    import fitz
+    from PIL import Image, ImageDraw, ImageFont
+
+    img = Image.new("RGB", (1200, 600), "white")
+    draw = ImageDraw.Draw(img)
+    try:
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 36)
+    except Exception:
+        font = ImageFont.load_default()
+    lines = [
+        "Voici un texte scanne pour OCR.",
+        "Lecture bionique facile a comprendre.",
+        "Avec OCR Tesseract integre dans Bionic Reader.",
+    ]
+    y = 80
+    for line in lines:
+        draw.text((60, y), line, fill="black", font=font)
+        y += 100
+    buf = _io.BytesIO()
+    img.save(buf, "JPEG", quality=80)
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=298)
+    page.insert_image(page.rect, stream=buf.getvalue())
+    doc.save(str(HERE / "scanned_image_only.pdf"), garbage=4, deflate=True)
+
+
 def main() -> None:
     image = write_red_png()
     write_docx(image)
     write_pptx(image)
     write_xlsx(image)
     write_pdf(image)
+    write_doc_via_libreoffice()
+    write_scanned_pdf()
     print("All fixtures regenerated under", HERE)
 
 

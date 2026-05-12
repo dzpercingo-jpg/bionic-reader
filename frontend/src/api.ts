@@ -86,7 +86,7 @@ export async function exportDocumentInplace(
   return await res.blob()
 }
 
-export const INPLACE_FORMATS = new Set(['pdf', 'docx', 'pptx', 'xlsx'])
+export const INPLACE_FORMATS = new Set(['pdf', 'doc', 'docx', 'pptx', 'xlsx'])
 
 export function getExtension(filename: string): string {
   const i = filename.lastIndexOf('.')

@@ -42,13 +42,32 @@ import fitz  # PyMuPDF
 
 from ..models import BionicSettings
 from ..transformer import WORD_RE, _prefix_length
+from .pdf_ocr import needs_ocr, ocr_pdf
 
 
 def export_inplace(
     data: bytes,
     settings: BionicSettings,
     filename: str = "document.pdf",
+    ocr: bool = True,
 ) -> tuple[bytes, str, str]:
+    """Bionic-style a PDF in-place.
+
+    If `ocr=True` (default) and the PDF has at least one page without a usable
+    text layer (scanned), Tesseract OCR is run first to add an invisible text
+    layer to those pages so the bionic styling has something to anchor to.
+    Pages that already have selectable text are not OCR'd.
+    """
+    if ocr:
+        try:
+            if needs_ocr(data):
+                data = ocr_pdf(data)
+        except RuntimeError:
+            # Tesseract not installed — fall back to non-OCR path. The caller
+            # will see a PDF with no bionic bold on scanned pages but the file
+            # is still valid and other pages still get styled.
+            pass
+
     doc = fitz.open(stream=data, filetype="pdf")
     if settings.enabled:
         for page in doc:
@@ -65,7 +84,7 @@ def export_inplace(
     )
 
 
-def _process_page(page: "fitz.Page", settings: BionicSettings) -> None:
+def _process_page(page: fitz.Page, settings: BionicSettings) -> None:
     raw = page.get_text("rawdict")
     overlays: list[tuple[fitz.Rect, str, float, tuple[float, float, float], str]] = []
 

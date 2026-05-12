@@ -624,9 +624,10 @@ function TtsPanel({ settings, setSettings }: PanelProps) {
 function ExportPanel({ onExport }: { onExport: (fmt: ExportFormat) => void }) {
   const { sourceFile } = useApp()
   const ext = sourceFile?.name.split('.').pop()?.toLowerCase() ?? ''
-  const canInplace = ['pdf', 'docx', 'pptx', 'xlsx'].includes(ext)
+  const canInplace = ['pdf', 'doc', 'docx', 'pptx', 'xlsx'].includes(ext)
   const inplaceLabel: Record<string, string> = {
-    pdf: 'PDF (préserve images & mise en page)',
+    pdf: 'PDF (préserve images, vecteurs, signatures + OCR si scanné)',
+    doc: 'Word 97-2003 → DOCX (préserve images & contenu)',
     docx: 'Word (préserve images, tableaux, styles)',
     pptx: 'PowerPoint (préserve diapos & images)',
     xlsx: 'Excel (préserve formules & graphes)',

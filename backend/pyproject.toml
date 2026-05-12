@@ -18,6 +18,8 @@ dependencies = [
     "striprtf>=0.0.28",
     "chardet>=5.2.0",
     "pydantic>=2.9.0",
+    "pytesseract>=0.3.10",
+    "pillow>=10.0.0",
 ]
 
 [project.optional-dependencies]
@@ -41,7 +43,8 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP"]
-ignore = ["E501"]
+# B008: FastAPI dependency injection requires `File(...)` / `Form(...)` in defaults.
+ignore = ["E501", "B008"]
 
 [tool.mypy]
 python_version = "3.11"

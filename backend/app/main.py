@@ -94,8 +94,14 @@ async def export_inplace(
     styled in bold. The original file is never written to disk on the
     server.
 
-    Supported source formats: DOCX, PDF, PPTX, XLSX. The output always
-    matches the source format.
+    Supported source formats: DOC, DOCX, PDF, PPTX, XLSX.
+
+    For DOC (legacy Word 97-2003 binary), the output is a `.bionic.docx`
+    file — round-tripping back to the legacy binary format would lose
+    information that DOCX preserves. For PDF, scanned/image-only pages
+    are pre-processed with Tesseract OCR so the bionic styling has text
+    to anchor to (other pages are unchanged). For every other format,
+    the output extension matches the source.
     """
     data = await file.read()
     if len(data) > MAX_UPLOAD_BYTES:
