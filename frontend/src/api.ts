@@ -71,7 +71,7 @@ export function settingsToBackend(s: Settings): BionicSettings {
 export async function exportDocumentInplace(
   file: File,
   settings: Settings,
-): Promise<Blob> {
+): Promise<{ blob: Blob; filename: string | null }> {
   const fd = new FormData()
   fd.append('file', file)
   fd.append('settings', JSON.stringify(settingsToBackend(settings)))
@@ -83,10 +83,97 @@ export async function exportDocumentInplace(
     const detail = await safeDetail(res)
     throw new Error(detail ?? `In-place export failed (${res.status})`)
   }
-  return await res.blob()
+  // Backend may convert the source extension (e.g. legacy .doc → .docx) and
+  // reports the correct output filename in Content-Disposition. Honor it so
+  // the download has the right extension and opens correctly in Word/etc.
+  const filename = parseContentDispositionFilename(res.headers.get('Content-Disposition'))
+  return { blob: await res.blob(), filename }
 }
 
-export const INPLACE_FORMATS = new Set(['pdf', 'docx', 'pptx', 'xlsx'])
+function parseContentDispositionFilename(header: string | null): string | null {
+  if (!header) return null
+  // RFC 6266: filename*=UTF-8''... takes precedence over filename="..."
+  const star = /filename\*\s*=\s*([^;]+)/i.exec(header)
+  if (star) {
+    const raw = star[1].trim()
+    const m = /^[^']*'[^']*'(.+)$/.exec(raw)
+    if (m) {
+      try {
+        return decodeURIComponent(m[1])
+      } catch {
+        return m[1]
+      }
+    }
+  }
+  const plain = /filename\s*=\s*"?([^";]+)"?/i.exec(header)
+  return plain ? plain[1].trim() : null
+}
+
+export const INPLACE_FORMATS = new Set(['pdf', 'doc', 'docx', 'pptx', 'xlsx'])
+
+// ----------------------------------------------------------------------------
+// Onboarding scoring API
+// ----------------------------------------------------------------------------
+
+export interface AsrsAnswerPayload {
+  qid: 'q1' | 'q2' | 'q3' | 'q4' | 'q5' | 'q6'
+  score: 0 | 1 | 2 | 3 | 4
+}
+
+export interface PvtTrialPayload {
+  rt_ms: number
+  false_start: boolean
+  lapse: boolean
+}
+
+export interface ReadingTrialPayload {
+  word_count: number
+  elapsed_ms: number
+  comprehension_correct?: number
+  comprehension_total?: number
+}
+
+export interface AssessmentPayload {
+  asrs: AsrsAnswerPayload[]
+  pvt: PvtTrialPayload[]
+  reading: ReadingTrialPayload | null
+  locale?: string | null
+}
+
+export interface ProfileVectorResp {
+  inattention: number
+  hyperactivity: number
+  reading_speed_wpm: number
+  consistency: number
+  confidence: number
+}
+
+export interface RecommendedPresetResp {
+  profile: 'apaise' | 'equilibre' | 'concentre' | 'sprint'
+  rationale: string
+  settings: Record<string, string | number | boolean>
+  profile_weights: Record<string, number>
+}
+
+export interface AssessmentResultResp {
+  profile: ProfileVectorResp
+  preset: RecommendedPresetResp
+}
+
+export async function scoreOnboarding(
+  payload: AssessmentPayload,
+): Promise<AssessmentResultResp> {
+  const res = await fetch(`${API_BASE}/api/onboarding/score`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  if (!res.ok) {
+    const detail = await safeDetail(res)
+    throw new Error(detail ?? `Onboarding score failed (${res.status})`)
+  }
+  return (await res.json()) as AssessmentResultResp
+}
 
 export function getExtension(filename: string): string {
   const i = filename.lastIndexOf('.')

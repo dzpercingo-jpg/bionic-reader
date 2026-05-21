@@ -70,7 +70,7 @@ def write_docx(image_path: Path) -> None:
 
 def write_pptx(image_path: Path) -> None:
     from pptx import Presentation
-    from pptx.util import Emu, Inches
+    from pptx.util import Inches
 
     prs = Presentation()
     slide = prs.slides.add_slide(prs.slide_layouts[5])  # title-only
@@ -166,12 +166,174 @@ def write_pdf(image_path: Path) -> None:
     doc.save(str(HERE / "with_image_and_table.pdf"))
 
 
+def write_doc_via_libreoffice() -> None:
+    """Convert with_image_and_table.docx -> with_image_and_table.doc via libreoffice.
+
+    Used by the legacy-format in-place exporter tests. Skipped silently if
+    LibreOffice is not installed on the host.
+    """
+    import shutil
+    import subprocess
+    import tempfile
+
+    soffice = shutil.which("libreoffice") or shutil.which("soffice")
+    if not soffice:
+        print("LibreOffice not installed — skipping .doc fixture")
+        return
+    src = HERE / "with_image_and_table.docx"
+    with tempfile.TemporaryDirectory() as td:
+        out = subprocess.run(
+            [
+                soffice,
+                "--headless",
+                f"-env:UserInstallation=file://{td}/profile",
+                "--convert-to",
+                "doc",
+                "--outdir",
+                td,
+                str(src),
+            ],
+            capture_output=True,
+            timeout=60,
+            check=False,
+        )
+        if out.returncode != 0:
+            print("LibreOffice failed:", out.stderr.decode(errors="ignore"))
+            return
+        produced = Path(td) / "with_image_and_table.doc"
+        if produced.exists():
+            (HERE / "with_image_and_table.doc").write_bytes(produced.read_bytes())
+
+
+def write_scanned_pdf() -> None:
+    """Render a few sentences as a JPEG and embed in a no-text PDF.
+
+    Used to verify the OCR pre-processing step adds an invisible text layer
+    so the in-place exporter can apply bionic styling to scanned PDFs.
+
+    Kept simple (high-contrast clean text) so this fixture remains the
+    easy baseline that any OCR engine should solve trivially. The harder
+    benchmark fixture lives in `write_scanned_pdf_realistic`.
+    """
+    import io as _io
+
+    import fitz
+    from PIL import Image, ImageDraw, ImageFont
+
+    img = Image.new("RGB", (1200, 600), "white")
+    draw = ImageDraw.Draw(img)
+    try:
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 36)
+    except Exception:
+        font = ImageFont.load_default()
+    lines = [
+        "Voici un texte scanne pour OCR.",
+        "Lecture bionique facile a comprendre.",
+        "Avec OCR Tesseract integre dans Bionic Reader.",
+    ]
+    y = 80
+    for line in lines:
+        draw.text((60, y), line, fill="black", font=font)
+        y += 100
+    buf = _io.BytesIO()
+    img.save(buf, "JPEG", quality=80)
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=298)
+    page.insert_image(page.rect, stream=buf.getvalue())
+    doc.save(str(HERE / "scanned_image_only.pdf"), garbage=4, deflate=True)
+
+
+def write_scanned_pdf_realistic() -> None:
+    """Generate a tougher scanned PDF used by the OCR benchmark tests.
+
+    Realism features:
+    - Long paragraph (~80 words) so we can measure word-level F1.
+    - JPEG noise + light Gaussian blur to mimic a real scan.
+    - Slight rotation (1.5°) so deskew is required.
+    - DejaVu Serif font (different from the easy fixture's sans).
+
+    The "ground truth" string is also written alongside the PDF
+    (`scanned_realistic.gt.txt`) so the benchmark test doesn't need to
+    re-derive it.
+    """
+    import io as _io
+    import random
+
+    import fitz
+    from PIL import Image, ImageDraw, ImageFilter, ImageFont
+
+    ground_truth = (
+        "La lecture bionique guide l'oeil en mettant en gras la moitie initiale "
+        "de chaque mot, ce qui aide les lecteurs presentant des troubles de "
+        "l'attention a fixer leur regard. Cette technique exploite la maniere "
+        "dont le cerveau reconnait les mots a partir de leur prefixe, sans avoir "
+        "besoin de lire chaque lettre. Lorsque le texte est scanne et illisible "
+        "par un ordinateur, un moteur OCR comme Tesseract ou OCRmyPDF est utilise "
+        "pour reconstruire une couche de texte invisible mais selectionnable."
+    )
+
+    # Render: 2200x1400 page at ~300dpi equivalent.
+    img = Image.new("RGB", (2200, 1400), "white")
+    draw = ImageDraw.Draw(img)
+    try:
+        font = ImageFont.truetype(
+            "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf", 34
+        )
+    except Exception:
+        font = ImageFont.load_default()
+
+    # Manual word-wrap.
+    words = ground_truth.split()
+    lines: list[str] = []
+    line = ""
+    for w in words:
+        candidate = (line + " " + w).strip()
+        if draw.textlength(candidate, font=font) < 2000:
+            line = candidate
+        else:
+            lines.append(line)
+            line = w
+    if line:
+        lines.append(line)
+
+    y = 120
+    for ln in lines:
+        draw.text((100, y), ln, fill="black", font=font)
+        y += 60
+
+    # Light blur + noise (simulate a scanner).
+    img = img.filter(ImageFilter.GaussianBlur(radius=0.4))
+    rnd = random.Random(42)
+    pixels = img.load()
+    if pixels is not None:
+        for _ in range(8000):
+            xi = rnd.randint(0, img.width - 1)
+            yi = rnd.randint(0, img.height - 1)
+            v = rnd.randint(60, 200)
+            pixels[xi, yi] = (v, v, v)
+
+    # Slight rotation (1.5° clockwise) to require deskew.
+    img = img.rotate(-1.5, expand=False, fillcolor="white", resample=Image.BICUBIC)
+
+    buf = _io.BytesIO()
+    img.save(buf, "JPEG", quality=70)
+
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=380)
+    page.insert_image(page.rect, stream=buf.getvalue())
+    doc.save(str(HERE / "scanned_realistic.pdf"), garbage=4, deflate=True)
+    (HERE / "scanned_realistic.gt.txt").write_text(ground_truth, encoding="utf-8")
+
+
 def main() -> None:
     image = write_red_png()
     write_docx(image)
     write_pptx(image)
     write_xlsx(image)
     write_pdf(image)
+    write_doc_via_libreoffice()
+    write_scanned_pdf()
+    write_scanned_pdf_realistic()
     print("All fixtures regenerated under", HERE)
 
 

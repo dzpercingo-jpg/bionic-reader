@@ -6,7 +6,7 @@ import Reader from './components/Reader'
 import RsvpView from './components/RsvpView'
 import TtsBar from './components/TtsBar'
 import WelcomePage from './components/WelcomePage'
-import OnboardingQuiz from './components/OnboardingQuiz'
+import OnboardingV2 from './components/OnboardingV2'
 import GuidedShell from './components/GuidedShell'
 import { useApp } from './store'
 import { INPLACE_FORMATS, exportDocument, exportDocumentInplace, getExtension } from './api'
@@ -62,11 +62,13 @@ function App() {
           setError(`Le format .${ext} ne supporte pas l'export fidélité. Utilise un export HTML / DOCX / TXT.`)
           return
         }
-        const blob = await exportDocumentInplace(sourceFile, settings)
+        const { blob, filename } = await exportDocumentInplace(sourceFile, settings)
         const url = URL.createObjectURL(blob)
         const a = window.document.createElement('a')
         a.href = url
-        a.download = `${stem}.bionic.${ext}`
+        // Trust the backend's reported filename when present — it knows when a
+        // conversion changes the extension (legacy .doc → .docx).
+        a.download = filename ?? `${stem}.bionic.${ext}`
         a.click()
         URL.revokeObjectURL(url)
         return
@@ -91,7 +93,7 @@ function App() {
   // Route 2: Guided mode — onboarding quiz then guided shell
   if (mode === 'guided') {
     if (!onboardingDone) {
-      return <OnboardingQuiz onDone={() => undefined} />
+      return <OnboardingV2 onDone={() => undefined} />
     }
     return (
       <GuidedShell onExport={handleExport}>

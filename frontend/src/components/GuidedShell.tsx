@@ -41,7 +41,7 @@ export default function GuidedShell({
     sourceFile,
   } = useApp()
   const inplaceExt = sourceFile?.name.split('.').pop()?.toLowerCase() ?? ''
-  const canInplace = ['pdf', 'docx', 'pptx', 'xlsx'].includes(inplaceExt)
+  const canInplace = ['pdf', 'doc', 'docx', 'pptx', 'xlsx'].includes(inplaceExt)
   const [exportOpen, setExportOpen] = useState(false)
 
   const theme = THEMES[settings.theme]

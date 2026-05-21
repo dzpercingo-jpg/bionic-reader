@@ -36,19 +36,59 @@ Limitations (documented for the user):
 from __future__ import annotations
 
 import io
+from dataclasses import dataclass
 from pathlib import Path
 
 import fitz  # PyMuPDF
 
 from ..models import BionicSettings
 from ..transformer import WORD_RE, _prefix_length
+from .pdf_ocr import needs_ocr, ocr_pdf
+
+# PyMuPDF char_flags bit 0 indicates "text is rendered with fill". OCR layers
+# from ocrmypdf are inserted with render_mode 3 (invisible), so this bit is
+# clear. Native PDF text has it set.
+_CHAR_FLAG_FILL = 0x01
+
+
+@dataclass(frozen=True)
+class Overlay:
+    """One bionic prefix — the original bbox to redact, plus the exact
+    baseline origin and render mode used to reinsert the bold text."""
+    rect: fitz.Rect
+    text: str
+    fsize: float
+    color: tuple[float, float, float]
+    font_hint: str
+    origin_x: float
+    origin_y: float
+    is_ocr: bool  # True → the underlying span is an invisible OCR layer
 
 
 def export_inplace(
     data: bytes,
     settings: BionicSettings,
     filename: str = "document.pdf",
+    ocr: bool = True,
 ) -> tuple[bytes, str, str]:
+    """Bionic-style a PDF in-place.
+
+    If `ocr=True` (default) and the PDF has at least one page without a usable
+    text layer (scanned), Tesseract OCR is run first to add an invisible text
+    layer to those pages so the bionic styling has something to anchor to.
+    Pages that already have selectable text are not OCR'd.
+    """
+    if ocr:
+        try:
+            if needs_ocr(data):
+                data = ocr_pdf(data)
+        except Exception:
+            # OCR unavailable or failed (Tesseract missing, bad language pack,
+            # PIL/fitz raster error, etc.) — fall back to the non-OCR path.
+            # The caller will see a PDF with no bionic bold on scanned pages
+            # but the file is still valid and other pages still get styled.
+            pass
+
     doc = fitz.open(stream=data, filetype="pdf")
     if settings.enabled:
         for page in doc:
@@ -65,9 +105,9 @@ def export_inplace(
     )
 
 
-def _process_page(page: "fitz.Page", settings: BionicSettings) -> None:
+def _process_page(page: fitz.Page, settings: BionicSettings) -> None:
     raw = page.get_text("rawdict")
-    overlays: list[tuple[fitz.Rect, str, float, tuple[float, float, float], str]] = []
+    overlays: list[Overlay] = []
 
     for block in raw.get("blocks", []):
         if block.get("type", 0) != 0:
@@ -79,37 +119,56 @@ def _process_page(page: "fitz.Page", settings: BionicSettings) -> None:
     if not overlays:
         return
 
-    # Step 1: redact the prefix bboxes (text layer only — images untouched).
-    for rect, _, _, _, _ in overlays:
-        page.add_redact_annot(rect)
-    page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
+    # Separate OCR'd overlays from native-text overlays. For native text we
+    # do the classical redact+reinsert. For OCR'd pages (the user sees a
+    # rendered image, the text layer is invisible) we leave the text layer
+    # ALONE and add a subtle visible highlight under the prefix so the
+    # bionic emphasis is visible without fragmenting the selectable text.
+    native = [o for o in overlays if not o.is_ocr]
+    ocr_layer = [o for o in overlays if o.is_ocr]
 
-    # Step 2: reinsert each prefix in bold at its original position.
-    for rect, text, fsize, color, font_hint in overlays:
-        bold_fontname = _pick_bold_font(font_hint)
-        # PyMuPDF baseline insertion: y must be the BASELINE, not the top.
-        # Approximate baseline as bottom - descent (descent ≈ 0.18 * size).
-        baseline_y = rect.y1 - max(0.5, fsize * 0.18)
+    # --- Native text path -----------------------------------------------
+    if native:
+        for o in native:
+            page.add_redact_annot(o.rect)
+        page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
+        for o in native:
+            bold_fontname = _pick_bold_font(o.font_hint)
+            try:
+                page.insert_text(
+                    (o.origin_x, o.origin_y),
+                    o.text,
+                    fontname=bold_fontname,
+                    fontsize=o.fsize,
+                    color=o.color,
+                    render_mode=0,
+                    overlay=True,
+                )
+            except Exception:
+                page.draw_line(
+                    (o.rect.x0, o.rect.y1 + 0.5),
+                    (o.rect.x1, o.rect.y1 + 0.5),
+                    color=o.color,
+                    width=0.8,
+                )
+
+    # --- OCR (scanned-page) path ---------------------------------------
+    # Draw a thin gray underline beneath the prefix portion of each OCR'd
+    # word. The rendered scan stays visually intact; the OCR text layer
+    # is not redacted so `get_text()` keeps producing coherent line text
+    # like ocrmypdf wrote it. The underline is what makes the bionic
+    # emphasis visible to the user on top of the page image.
+    for o in ocr_layer:
         try:
-            page.insert_text(
-                (rect.x0, baseline_y),
-                text,
-                fontname=bold_fontname,
-                fontsize=fsize,
-                color=color,
-                render_mode=0,
-                overlay=True,
+            y = o.rect.y1 + max(0.6, o.fsize * 0.06)
+            page.draw_line(
+                (o.rect.x0, y),
+                (o.rect.x1, y),
+                color=(0.10, 0.10, 0.10),
+                width=max(0.8, o.fsize * 0.07),
             )
         except Exception:
-            # If insertion fails for any reason (font issues, unicode),
-            # fall back to a thin underline below the prefix rect so the
-            # word at least keeps SOME bionic emphasis.
-            page.draw_line(
-                (rect.x0, rect.y1 + 0.5),
-                (rect.x1, rect.y1 + 0.5),
-                color=color,
-                width=0.8,
-            )
+            continue
 
 
 def _collect_span_overlays(
@@ -128,6 +187,13 @@ def _collect_span_overlays(
     b = (color_int & 0xFF) / 255.0
     color = (r, g, b)
 
+    # Detect invisible (OCR-generated) text. ocrmypdf writes glyph-stretched
+    # invisible text where the FILL char_flag bit is unset (no fill paint).
+    # On OCR pages we keep the text layer untouched and instead draw a
+    # visible highlight, so the underlying selectable text stays coherent.
+    char_flags = int(span.get("char_flags", 0))
+    is_ocr = (char_flags & _CHAR_FLAG_FILL) == 0
+
     # Reconstruct the text string aligned with chars (one entry per char).
     text = "".join((c.get("c", "") or "") for c in chars)
 
@@ -137,7 +203,6 @@ def _collect_span_overlays(
         plen = _prefix_length(word, settings)
         if plen <= 0:
             continue
-        # Guard against rawdict char-count mismatch with regex match positions.
         prefix_chars = chars[start : start + plen]
         if not prefix_chars or len(prefix_chars) != plen:
             continue
@@ -152,7 +217,23 @@ def _collect_span_overlays(
         rect = fitz.Rect(x0, y0, x1, y1)
         if rect.is_empty or rect.is_infinite:
             continue
-        out.append((rect, word[:plen], font_size, color, font_name))
+
+        # Pull the EXACT baseline from the first prefix char's origin.
+        # PyMuPDF stores `origin = (x, baseline_y)` per char in rawdict.
+        first = prefix_chars[0]
+        origin = first.get("origin") or (rect.x0, rect.y1 - max(0.5, font_size * 0.18))
+        origin_x, origin_y = float(origin[0]), float(origin[1])
+
+        out.append(Overlay(
+            rect=rect,
+            text=word[:plen],
+            fsize=font_size,
+            color=color,
+            font_hint=font_name,
+            origin_x=origin_x,
+            origin_y=origin_y,
+            is_ocr=is_ocr,
+        ))
 
 
 def _pick_bold_font(fontname: str) -> str:

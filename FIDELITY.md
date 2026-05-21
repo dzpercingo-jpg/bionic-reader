@@ -11,6 +11,20 @@ process them in memory, and stream out a new `.bionic.<ext>` file.
 
 ## What is preserved by the in-place exporters
 
+### DOC (legacy Word 97-2003 binary, `app/inplace/doc_inplace.py`)
+| Element | Status |
+|---|---|
+| Conversion path | `.doc` → `.docx` via LibreOffice headless, then DOCX in-place pipeline |
+| Output extension | `.bionic.docx` (round-tripping to legacy binary loses data) |
+| Embedded images | Preserved through the LibreOffice conversion |
+| Tables | Best-effort — the legacy `.doc` binary format can flatten complex tables; cell *content* always survives but the `<w:tbl>` wrapper may not |
+| Run properties (font, color, italic…) | Preserved |
+| Footnotes, headers/footers | Preserved |
+
+How: spawns `soffice --headless --convert-to docx` in a per-call tempdir,
+then runs `docx_inplace.export_inplace` on the resulting bytes. LibreOffice
+must be installed on the host (`apt install libreoffice-core libreoffice-writer`).
+
 ### DOCX (`app/inplace/docx_inplace.py`)
 | Element | Status |
 |---|---|
@@ -48,8 +62,23 @@ Known limitations:
 - Custom embedded fonts cannot be replicated exactly. The fallback Helvetica /
   Times / Courier bold may look slightly different from the original.
 - Right-to-left scripts (Arabic, Hebrew) are not supported.
-- Scanned PDFs (image-only) need a separate OCR pass before this exporter
-  can find any text to style.
+- Scanned PDFs (image-only) are first run through Tesseract OCR
+  (`app/inplace/pdf_ocr.py`) which adds an invisible text layer before
+  the bionic pass. Pages that already have a text layer are not OCR'd.
+
+### Scanned PDF OCR (`app/inplace/pdf_ocr.py`)
+| Behaviour | Status |
+|---|---|
+| Detection | Pages with < 20 characters of extractable text are flagged |
+| Pre-processing | Rasterized at 300 DPI → Tesseract (`eng+fra`) → invisible text layer (`render_mode=3`) anchored to the recognized bboxes |
+| Effect on existing text pages | Untouched — only image-only pages are modified |
+| Visual identity | The OCR layer is invisible; the page still looks 100% like the original scan |
+| Selectability / accessibility | The OCR'd text is selectable and readable by screen readers after pre-processing |
+| Opt-out | The exporter accepts `ocr=False` to skip the pre-processing pass |
+
+Tesseract must be installed on the host (`apt install tesseract-ocr
+tesseract-ocr-fra tesseract-ocr-eng`). If it's missing the in-place exporter
+falls back to the non-OCR path with a logged warning.
 
 ### PPTX (`app/inplace/pptx_inplace.py`)
 | Element | Status |

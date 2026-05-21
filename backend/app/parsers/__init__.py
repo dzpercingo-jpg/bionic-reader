@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import importlib
 import uuid
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 from ..models import Block, DocumentModel
 
@@ -18,7 +18,7 @@ ParserFn = Callable[[bytes], tuple[list[Block], list[str]]]
 EXT_PARSER_MODULES: dict[str, tuple[str, str]] = {
     "pdf": ("pdf_parser", "parse"),
     "docx": ("docx_parser", "parse"),
-    "doc": ("docx_parser", "parse"),
+    "doc": ("doc_parser", "parse"),
     "pptx": ("pptx_parser", "parse"),
     "xlsx": ("xlsx_parser", "parse"),
     "txt": ("txt_parser", "parse"),

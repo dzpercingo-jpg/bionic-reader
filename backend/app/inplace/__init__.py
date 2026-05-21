@@ -17,7 +17,7 @@ What stays intact:
 from __future__ import annotations
 
 import importlib
-from typing import Callable
+from collections.abc import Callable
 
 from ..models import BionicSettings
 
@@ -25,6 +25,7 @@ InPlaceFn = Callable[[bytes, BionicSettings, str], tuple[bytes, str, str]]
 
 INPLACE_MODULES: dict[str, tuple[str, str]] = {
     "docx": ("docx_inplace", "export_inplace"),
+    "doc": ("doc_inplace", "export_inplace"),
     "pdf": ("pdf_inplace", "export_inplace"),
     "pptx": ("pptx_inplace", "export_inplace"),
     "xlsx": ("xlsx_inplace", "export_inplace"),

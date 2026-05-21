@@ -22,7 +22,7 @@ def test_formats_lists_inplace(client: TestClient) -> None:
     r = client.get("/api/formats")
     assert r.status_code == 200
     payload = r.json()
-    assert set(payload["inplace"]) == {"docx", "pdf", "pptx", "xlsx"}
+    assert set(payload["inplace"]) == {"doc", "docx", "pdf", "pptx", "xlsx"}
 
 
 @pytest.mark.parametrize(
@@ -48,6 +48,28 @@ def test_inplace_endpoint_returns_valid_file(
     assert r.content[: len(expected_prefix)] == expected_prefix
     assert "attachment" in r.headers["content-disposition"]
     assert ".bionic." in r.headers["content-disposition"]
+
+
+def test_inplace_endpoint_handles_legacy_doc(client: TestClient) -> None:
+    """Legacy .doc files should be accepted and returned as .bionic.docx."""
+    import shutil
+    if not (shutil.which("libreoffice") or shutil.which("soffice")):
+        pytest.skip("LibreOffice not installed")
+    path = FIXTURES / "with_image_and_table.doc"
+    if not path.exists():
+        pytest.skip(".doc fixture missing — run tests/fixtures/generate.py")
+    with path.open("rb") as f:
+        r = client.post(
+            "/api/export-inplace",
+            files={"file": (path.name, f, "application/msword")},
+            data={"settings": json.dumps(SETTINGS)},
+        )
+    assert r.status_code == 200, r.text
+    # Output is a DOCX archive (.doc round-trip would lose data).
+    assert r.content[:2] == b"PK"
+    cd = r.headers["content-disposition"]
+    assert ".bionic.docx" in cd
+    assert "wordprocessingml.document" in r.headers["content-type"]
 
 
 def test_inplace_endpoint_rejects_unsupported(client: TestClient) -> None:
